@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import Voronoi, voronoi_plot_2d
+from matplotlib.animation import FuncAnimation
 
 # Параметры симуляции
 area_size = 50  # Размер области (км)
@@ -8,57 +9,67 @@ num_uav = 10  # Количество UAV-BS
 num_users = 1000  # Количество пользователей
 simulation_steps = 100  # Количество временных слотов
 uav_range = 5  # Радиус обслуживания UAV-BS (км)
+movement_speed = 0.1  # Скорость движения UAV-BS (единицы расстояния за шаг)
 
 # Инициализация позиций UAV-BS и пользователей
 uav_positions = np.random.rand(num_uav, 2) * area_size
 user_positions = np.random.rand(num_users, 2) * area_size
 
-# Сохранение всех позиций UAV-BS на каждом шаге
-uav_positions_over_time = np.zeros((simulation_steps, num_uav, 2))
+# Сохранение всех позиций UAV-BS на каждом шаге для обычного метода
+uav_positions_over_time_basic = np.zeros((simulation_steps, num_uav, 2))
 
-def plot_positions(uav_positions, user_positions, step):
-    plt.figure(figsize=(10, 10))
-    plt.scatter(user_positions[:, 0], user_positions[:, 1], c='blue', label='Users')
-    plt.scatter(uav_positions[:, 0], uav_positions[:, 1], c='red', label='UAV-BS')
-    plt.xlim(0, area_size)
-    plt.ylim(0, area_size)
-    plt.title(f'UAV-BS and User Positions at Step {step}')
-    plt.legend()
-    plt.show()
+# Сохранение всех позиций UAV-BS на каждом шаге для метода PADR
+uav_positions_over_time_padr = np.zeros((simulation_steps, num_uav, 2))
 
-def redistribute_uavs(uav_positions, user_positions, uav_range):
+# Обычный метод перераспределения (простое движение к ближайшей базовой станции)
+# Пример простого случайного движения для базового метода
+def basic_redistribute(uav_positions, user_positions, movement_speed):
     new_positions = uav_positions.copy()
     for i in range(len(uav_positions)):
-        users_in_range = np.linalg.norm(user_positions - uav_positions[i], axis=1) < uav_range
-        if np.sum(users_in_range) < 10:  # Пороговое значение количества пользователей
-            closest_uav = np.argmin(np.linalg.norm(uav_positions - uav_positions[i], axis=1) + np.eye(num_uav) * 1e6)
-            direction = uav_positions[closest_uav] - uav_positions[i]
-            new_positions[i] += direction / np.linalg.norm(direction) * 0.1  # Перемещение на 10%
+        # Движение в случайном направлении
+        new_positions[i] += np.random.randn(2) * movement_speed
     return new_positions
 
-# Метод PADR
-def padr_redistribute(uav_positions, user_positions, uav_range):
+
+# Метод PADR (Proximity-Aware Dynamic Redistribution)
+def padr_redistribute(uav_positions, user_positions, uav_range, movement_speed):
     new_positions = uav_positions.copy()
     for i in range(len(uav_positions)):
-        # Считаем количество пользователей в радиусе действия
         users_in_range = np.linalg.norm(user_positions - uav_positions[i], axis=1) < uav_range
         if np.sum(users_in_range) < 10:  # Пороговое значение количества пользователей
             closest_uav = np.argmin(np.linalg.norm(uav_positions - uav_positions[i], axis=1) + np.eye(num_uav) * 1e6)
             direction = uav_positions[closest_uav] - uav_positions[i]
-            new_positions[i] += direction / np.linalg.norm(direction) * 0.1  # Перемещение на 10%
+            norm = np.linalg.norm(direction)
+            if norm > 0:  # Проверка на нулевую норму
+                new_positions[i] += direction / norm * movement_speed  # Перемещение на заданную скорость
     return new_positions
 
 # Основной цикл симуляции
 for step in range(simulation_steps):
-    uav_positions = padr_redistribute(uav_positions, user_positions, uav_range)
-    uav_positions_over_time[step] = uav_positions
-    user_positions += np.random.randn(num_users, 2) * 0.1  # Динамическое изменение позиций пользователей
+    # Обычный метод
+    uav_positions_basic = basic_redistribute(uav_positions, user_positions, movement_speed)
+    uav_positions_over_time_basic[step] = uav_positions_basic.copy()
+    
+    # Метод PADR
+    uav_positions_padr = padr_redistribute(uav_positions, user_positions, uav_range, movement_speed)
+    uav_positions_over_time_padr[step] = uav_positions_padr.copy()
+    
+    # Обновление позиций пользователей каждые 10 шагов
+    if step % 10 == 0:
+        user_positions += np.random.randn(num_users, 2) * 0.1  # Моделирование движения пользователей
 
-# Рассчет средних позиций UAV-BS
-mean_uav_positions = np.mean(uav_positions_over_time, axis=0)
+    # Обновление позиций UAV-BS
+    uav_positions = uav_positions_basic  # Для базового метода
 
-# Визуализация зон покрытия с использованием диаграмм Вороного
+# Рассчет средних позиций UAV-BS для визуализации
+mean_uav_positions_basic = np.mean(uav_positions_over_time_basic, axis=0)
+mean_uav_positions_padr = np.mean(uav_positions_over_time_padr, axis=0)
+
+# Визуализация зон покрытия с использованием диаграммы Вороного
 def plot_voronoi(uav_positions, user_positions, area_size):
+    valid_indices = ~np.isnan(uav_positions).any(axis=1)
+    uav_positions = uav_positions[valid_indices]
+    
     vor = Voronoi(uav_positions)
     fig, ax = plt.subplots(figsize=(10, 10))
     voronoi_plot_2d(vor, ax=ax, show_vertices=False, line_colors='orange', line_width=2)
@@ -70,23 +81,27 @@ def plot_voronoi(uav_positions, user_positions, area_size):
     ax.legend()
     plt.show()
 
-# Визуализация распределения базовых станций с использованием метода PADR
-def plot_padr_redistribution(uav_positions_over_time, user_positions, area_size):
+# Анимация перераспределения UAV-BS с использованием обоих методов
+def animate_redistribution(uav_positions_over_time_basic, uav_positions_over_time_padr, user_positions, area_size):
     fig, ax = plt.subplots(figsize=(10, 10))
-    colors = plt.cm.viridis(np.linspace(0, 1, simulation_steps // 10))
-    for t in range(0, simulation_steps, 10):
-        ax.scatter(uav_positions_over_time[t][:, 0], uav_positions_over_time[t][:, 1], label=f'Step {t}', color=colors[t // 10])
-        if t > 0:
-            for i in range(num_uav):
-                ax.plot([uav_positions_over_time[t-10][i, 0], uav_positions_over_time[t][i, 0]],
-                        [uav_positions_over_time[t-10][i, 1], uav_positions_over_time[t][i, 1]], color=colors[t // 10])
-    ax.scatter(user_positions[:, 0], user_positions[:, 1], c='blue', label='Users', alpha=0.3)
     ax.set_xlim(0, area_size)
     ax.set_ylim(0, area_size)
-    ax.set_title('PADR UAV-BS Redistribution Over Time')
-    ax.legend()
+    ax.set_title('Comparison of UAV-BS Redistribution Methods')
+    ax.scatter(user_positions[:, 0], user_positions[:, 1], c='blue', label='Users', alpha=0.3)
+    
+    scatter_basic = ax.scatter([], [], c='green', label='Basic Method')
+    scatter_padr = ax.scatter([], [], c='red', label='PADR Method')
+
+    def update(frame):
+        scatter_basic.set_offsets(uav_positions_over_time_basic[frame])
+        scatter_padr.set_offsets(uav_positions_over_time_padr[frame])
+        return scatter_basic, scatter_padr,
+
+    anim = FuncAnimation(fig, update, frames=simulation_steps, interval=200, blit=True)
+    plt.legend()
     plt.show()
 
-plot_voronoi(mean_uav_positions, user_positions, area_size)
-plot_padr_redistribution(uav_positions_over_time, user_positions, area_size)
+# Визуализация
+plot_voronoi(mean_uav_positions_basic, user_positions, area_size)
+animate_redistribution(uav_positions_over_time_basic, uav_positions_over_time_padr, user_positions, area_size)
 print("Simulation completed.")

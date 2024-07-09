@@ -14,14 +14,14 @@ SERVICE_RADIUS = 10  # Радиус обслуживания БПЛА
 
 class User:
     def __init__(self, env, user_id, location):
-        self.env = env
+        
         self.user_id = user_id
         self.location = location
         self.served = False
 
 class UAV:
     def __init__(self, env, uav_id, partitions):
-        self.env = env
+        
         self.uav_id = uav_id
         self.partitions = partitions
         self.current_partition = None

@@ -1,5 +1,4 @@
-# partition.py
-
+# tree.py
 class TreeNode:
     def __init__(self, name):
         self.name = name
